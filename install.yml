@@ -1,0 +1,81 @@
+- hosts: localhost
+
+  tasks:
+
+  - name: Instalacja apache2
+    apt: pkg=apache2
+
+  - name: Instalacja mariadb-server
+    apt: pkg=mariadb-server
+
+  - name: Instalacja php
+    apt: pkg="{{ item }}"
+    with_items: 
+      - php-pear 
+      - php-fpm 
+      - php-dev 
+      - php-zip 
+      - php-curl 
+      - php-xmlrpc 
+      - php-gd 
+      - php-mysql 
+      - php-mbstring 
+      - php-xml 
+      - libapache2-mod-php
+
+  - name: Zatrzymanie usługi apache2
+    service: name=apache2 state=stopped
+
+  - name: Konfiguracja apache2.conf
+    copy: src=src/apache2.conf dest=/etc/apache2/apache2.conf mode=0644
+
+  - name: Konfiguracja ports.conf
+    copy: src=src/ports.conf dest=/etc/apache2/ports.conf mode=0644
+   
+  - name: Konfiguracja 000-default.conf
+    copy: src=src/000-default.conf dest=/etc/apache2/sites-available/000-default.conf mode=0644
+
+  - name: Usunięcie html/index.html
+    file: dest=/var/www/html/index.html state=absent
+
+  - name: Konfiguracja html/index.php
+    copy: src=src/index.php dest=/var/www/html/index.php mode=0644
+
+  - name: Uruchomienie usługi apache2
+    service: name=apache2 state=started
+
+  - name: Instalacja nginx
+    apt: pkg=nginx
+
+  - name: Zatrzymanie usługi nginx
+    service: name=nginx state=stopped
+
+  - name: Usunięcie domyślnej konfiguracji nginx
+    file: dest=/etc/nginx/sites-enabled/default state=absent
+
+  - name: Konfiguracja reverse-proxy.conf
+    copy: src=src/reverse-proxy.conf dest=/etc/nginx/sites-available/reverse-proxy.conf mode=0644
+    
+  - name: Aktywacja reverse-proxy.conf
+    file: src=/etc/nginx/sites-available/reverse-proxy.conf dest=/etc/nginx/sites-enabled/reverse-proxy.conf state=link
+
+  - name: Instalacja moda RPAF
+    apt: pkg=libapache2-mod-rpaf
+
+  - name: Stworzenie folderu dla certyfikatu
+    file: dest=/etc/nginx/ssl state=directory
+
+  - name: Generowanie privatekey
+    openssl_privatekey: path=/etc/nginx/ssl/site.pem
+
+  - name: Generowanie csr
+    openssl_csr: path=/etc/nginx/ssl/site.csr privatekey_path=/etc/nginx/ssl/site.pem common_name="My site"
+
+  - name: Generowanie certyfikatu
+    openssl_certificate: path=/etc/nginx/ssl/site.crt privatekey_path=/etc/nginx/ssl/site.pem csr_path=/etc/nginx/ssl/site.csr provider=selfsigned
+
+  - name: Uruchomienie usługi nginx
+    service: name=nginx state=started
+
+  - name: Blokada dostępu do apache2 !nginx
+    iptables: chain=INPUT protocol=tcp destination_port=81 source=!127.0.0.1 jump=REJECT reject_with=tcp-reset
